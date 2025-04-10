@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Key Smash CPS Tester</title>
+  <style>
+    :root {
+      --bg: #1e1e2f;
+      --card: #2a2a40;
+      --accent: #00b894;
+      --text: #ffffff;
+      --muted: #aaaaaa;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+      font-size: 2rem;
+      color: var(--accent);
+    }
+
+    nav {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    nav button {
+      background-color: var(--card);
+      color: var(--text);
+      border: none;
+      padding: 10px 20px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease-in-out;
+    }
+
+    nav button:hover {
+      background-color: var(--accent);
+      color: #fff;
+    }
+
+    .tab {
+      display: none;
+      background: var(--card);
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+      width: 90%;
+      max-width: 600px;
+    }
+
+    .active-tab {
+      display: block;
+    }
+
+    button, select {
+      background-color: var(--accent);
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 10px;
+      margin-top: 10px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    select {
+      background-color: var(--card);
+      color: var(--text);
+      border: 1px solid var(--muted);
+      padding: 8px 12px;
+    }
+
+    input[type="text"] {
+      background-color: var(--card);
+      border: 1px solid var(--muted);
+      color: var(--text);
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 5px;
+      width: 100%;
+    }
+
+    #scoreDisplay, #multiMessage {
+      font-size: 1.5rem;
+      margin: 20px 0;
+    }
+
+    .leaderboard-entry {
+      border-bottom: 1px solid #444;
+      padding: 10px;
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+
+    .leaderboard-entry strong {
+      color: var(--text);
+    }
+
+    #flash {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: var(--accent);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.1s ease;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <div id="flash"></div>
+  <h1>💚 Key Smash CPS Tester</h1>
+
+  <nav>
+    <button onclick="showTab('game')">🕹️ Game</button>
+    <button onclick="showTab('leaderboard')">🏆 Leaderboard</button>
+    <button onclick="showTab('multiplayer')">👥 Multiplayer</button>
+    <button onclick="showTab('settings')">⚙️ Settings</button>
+  </nav>
+
+  <div id="game" class="tab active-tab">
+    <div id="scoreDisplay">Press to start</div>
+    <button onclick="startGame()">Start 5s Test</button>
+  </div>
+
+  <div id="leaderboard" class="tab"></div>
+
+  <div id="multiplayer" class="tab">
+    <div id="multiMessage">Player 1 starts! Press any key...</div>
+    <button onclick="startMultiplayer()">Restart Multiplayer</button>
+  </div>
+
+  <div id="settings" class="tab">
+    <label for="keyPreset">Key Preset:</label>
+    <select id="keyPreset" onchange="applyPreset()">
+      <option value="g,h">G & H</option>
+      <option value="j,s">J & S</option>
+      <option value="all">All Letters</option>
+      <option value="custom">Custom...</option>
+    </select>
+
+    <div id="customKeysContainer" style="display:none; margin-top:10px;">
+      <label for="customKeys">Enter keys (comma separated):</label>
+      <input id="customKeys" type="text" value="g,h" oninput="updateCustomKeys()">
+    </div>
+  </div>
+
+  <script>
+    let activeKeys = ["g", "h"];
+    let clicks = 0;
+    let gameRunning = false;
+    let startTime;
+    let multiplayer = false;
+    let playerTurn = 1;
+    let p1Score = 0, p2Score = 0;
+
+    function showTab(id) {
+      document.querySelectorAll(".tab").forEach(tab => tab.classList.remove("active-tab"));
+      document.getElementById(id).classList.add("active-tab");
+      if (id === "leaderboard") loadLeaderboard();
+    }
+
+    function applyPreset() {
+      const val = document.getElementById("keyPreset").value;
+      const customBox = document.getElementById("customKeysContainer");
+      if (val === "all") {
+        activeKeys = Array.from("abcdefghijklmnopqrstuvwxyz");
+        customBox.style.display = "none";
+      } else if (val === "custom") {
+        customBox.style.display = "block";
+        updateCustomKeys();
+      } else {
+        activeKeys = val.split(",");
+        customBox.style.display = "none";
+      }
+    }
+
+    function updateCustomKeys() {
+      const val = document.getElementById("customKeys").value;
+      activeKeys = val.split(",").map(k => k.trim().toLowerCase()).filter(k => k.length);
+    }
+
+    function startGame() {
+      clicks = 0;
+      gameRunning = true;
+      startTime = Date.now();
+      document.getElementById("scoreDisplay").innerText = "Go!";
+      setTimeout(() => {
+        gameRunning = false;
+        const cps = (clicks / 5).toFixed(2);
+        document.getElementById("scoreDisplay").innerText = `Score: ${clicks} | CPS: ${cps}`;
+        saveScore(clicks, cps, activeKeys.join(","));
+        loadLeaderboard();
+      }, 5000);
+    }
+
+    function startMultiplayer() {
+      multiplayer = true;
+      playerTurn = 1;
+      p1Score = 0;
+      p2Score = 0;
+      document.getElementById("multiMessage").innerText = "Player 1 starts! Press any key...";
+      gameRunning = false;
+    }
+
+    function handleKey(e) {
+      if (!gameRunning) {
+        if (multiplayer) {
+          if (playerTurn === 1 || playerTurn === 2) {
+            startMultiplayerTurn(playerTurn);
+          }
+        }
+        return;
+      }
+
+      if (activeKeys.includes(e.key.toLowerCase())) {
+        clicks++;
+        updateScoreDisplay();
+
+        // Flash effect
+        document.getElementById("flash").style.opacity = 0.3;
+        setTimeout(() => {
+          document.getElementById("flash").style.opacity = 0;
+        }, 100);
+      }
+    }
+
+    function updateScoreDisplay() {
+      if (!multiplayer) {
+        document.getElementById("scoreDisplay").innerText = `Clicks: ${clicks}`;
+      } else {
+        document.getElementById("multiMessage").innerText = `Player ${playerTurn}: ${clicks}`;
+      }
+    }
+
+    function startMultiplayerTurn(player) {
+      clicks = 0;
+      gameRunning = true;
+      document.getElementById("multiMessage").innerText = `Player ${player}: Go!`;
+
+      setTimeout(() => {
+        gameRunning = false;
+
+        if (player === 1) {
+          p1Score = clicks;
+          playerTurn = 2;
+
+          let countdown = 30;
+          let skipping = false;
+          const msg = document.getElementById("multiMessage");
+          msg.innerText = `⏳ Waiting ${countdown}s for Player 2... (Hold 'S' to skip)`;
+
+          const interval = setInterval(() => {
+            countdown--;
+            msg.innerText = `⏳ Waiting ${countdown}s for Player 2... (Hold 'S' to skip)`;
+            if (countdown <= 0 || skipping) {
+              clearInterval(interval);
+              msg.innerText = "➡️ Player 2's Turn! Press any key...";
+              document.removeEventListener("keydown", skipHandler);
+            }
+          }, 1000);
+
+          const skipHandler = (e) => {
+            if (e.key.toLowerCase() === "s") {
+              skipping = true;
+              clearInterval(interval);
+              msg.innerText = "➡️ Player 2's Turn! Press any key...";
+              document.removeEventListener("keydown", skipHandler);
+            }
+          };
+
+          document.addEventListener("keydown", skipHandler);
+        } else {
+          p2Score = clicks;
+          playerTurn = 1;
+
+          saveScore(p1Score, (p1Score / 5).toFixed(2), activeKeys.join(","));
+          saveScore(p2Score, (p2Score / 5).toFixed(2), activeKeys.join(","));
+
+          if (p1Score > p2Score) {
+            document.getElementById("multiMessage").innerText = `🎉 Player 1 wins! ${p1Score} vs ${p2Score}`;
+          } else if (p2Score > p1Score) {
+            document.getElementById("multiMessage").innerText = `🎉 Player 2 wins! ${p2Score} vs ${p1Score}`;
+          } else {
+            document.getElementById("multiMessage").innerText = `🤝 It's a tie! ${p1Score} - ${p2Score}`;
+          }
+
+          loadLeaderboard();
+        }
+      }, 5000);
+    }
+
+    function saveScore(score, cps, keys) {
+      const scores = JSON.parse(localStorage.getItem("cpsScores") || "[]");
+      scores.push({ score, cps, keys, time: new Date().toLocaleTimeString() });
+      localStorage.setItem("cpsScores", JSON.stringify(scores));
+    }
+
+    function loadLeaderboard() {
+      const scores = JSON.parse(localStorage.getItem("cpsScores") || "[]");
+      const container = document.getElementById("leaderboard");
+      container.innerHTML = "<h2>Leaderboard</h2>";
+      scores.sort((a, b) => b.score - a.score);
+      scores.slice(0, 10).forEach(entry => {
+        container.innerHTML += `
+          <div class="leaderboard-entry">
+            <strong>${entry.score}</strong> clicks | ${entry.cps} CPS<br>
+            Keys: ${entry.keys} | ${entry.time}
+          </div>`;
+      });
+    }
+
+    document.addEventListener("keydown", handleKey);
+  </script>
+</body>
+</html>
+
