@@ -1,8 +1,9 @@
+<!-- Full Super Clicker Code -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Key Smash CPS Tester</title>
+  <title>Super Clicker</title>
   <style>
     :root {
       --bg: #1e1e2f;
@@ -47,7 +48,6 @@
 
     nav button:hover {
       background-color: var(--accent);
-      color: #fff;
     }
 
     .tab {
@@ -62,34 +62,6 @@
 
     .active-tab {
       display: block;
-    }
-
-    button, select {
-      background-color: var(--accent);
-      border: none;
-      color: white;
-      padding: 10px 20px;
-      border-radius: 10px;
-      margin-top: 10px;
-      font-size: 1rem;
-      cursor: pointer;
-    }
-
-    select {
-      background-color: var(--card);
-      color: var(--text);
-      border: 1px solid var(--muted);
-      padding: 8px 12px;
-    }
-
-    input[type="text"] {
-      background-color: var(--card);
-      border: 1px solid var(--muted);
-      color: var(--text);
-      padding: 10px;
-      border-radius: 8px;
-      margin-top: 5px;
-      width: 100%;
     }
 
     #scoreDisplay, #multiMessage {
@@ -108,41 +80,77 @@
       color: var(--text);
     }
 
-    #flash {
-      position: fixed;
-      top: 0;
-      left: 0;
+    .filter-icon {
+      cursor: pointer;
+      margin: 10px 0;
+      color: var(--accent);
+      font-size: 1.1rem;
+      display: inline-block;
+    }
+
+    .filters {
+      display: none;
+      margin-bottom: 10px;
+    }
+
+    .filters input, .filters select {
+      margin-right: 10px;
+    }
+
+    #progressBarContainer {
       width: 100%;
+      background-color: #444;
+      height: 12px;
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+
+    #progressBar {
+      width: 0%;
       height: 100%;
       background-color: var(--accent);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.1s ease;
-      z-index: 9999;
+      transition: width 0.1s linear;
     }
   </style>
 </head>
 <body>
-  <div id="flash"></div>
-  <h1>💚 Key Smash CPS Tester</h1>
+  <h1>💚 Super Clicker</h1>
 
   <nav>
     <button onclick="showTab('game')">🕹️ Game</button>
-    <button onclick="showTab('leaderboard')">🏆 Leaderboard</button>
     <button onclick="showTab('multiplayer')">👥 Multiplayer</button>
+    <button onclick="showTab('leaderboard')">🏆 Leaderboard</button>
     <button onclick="showTab('settings')">⚙️ Settings</button>
   </nav>
 
   <div id="game" class="tab active-tab">
-    <div id="scoreDisplay">Press to start</div>
-    <button onclick="startGame()">Start 5s Test</button>
+    <div id="scoreDisplay">Press any key to start</div>
+    <div id="progressBarContainer" style="display: none;">
+      <div id="progressBar"></div>
+    </div>
   </div>
 
-  <div id="leaderboard" class="tab"></div>
-
   <div id="multiplayer" class="tab">
-    <div id="multiMessage">Player 1 starts! Press any key...</div>
-    <button onclick="startMultiplayer()">Restart Multiplayer</button>
+    <div id="multiMessage">Press space to start multiplayer</div>
+    <div id="progressBarContainerMultiplayer" style="display: none;">
+      <div id="progressBarMultiplayer"></div>
+    </div>
+  </div>
+
+  <div id="leaderboard" class="tab">
+    <div class="filter-icon" onclick="toggleFilters()">🔍 Filter</div>
+    <div class="filters" id="filterBox">
+      <select id="filterTime">
+        <option value="">All Times</option>
+        <option value="5">5s</option>
+        <option value="10">10s</option>
+        <option value="30">30s</option>
+      </select>
+      <input id="filterKeys" placeholder="Keys (e.g. g,h)" />
+      <button onclick="loadLeaderboard()">Apply</button>
+    </div>
+    <div id="leaderboardList"></div>
   </div>
 
   <div id="settings" class="tab">
@@ -158,21 +166,42 @@
       <label for="customKeys">Enter keys (comma separated):</label>
       <input id="customKeys" type="text" value="g,h" oninput="updateCustomKeys()">
     </div>
+
+    <label for="testDuration">Test Duration (seconds):</label>
+    <select id="testDuration">
+      <option value="5">5s</option>
+      <option value="10">10s</option>
+      <option value="30">30s</option>
+    </select>
   </div>
 
   <script>
     let activeKeys = ["g", "h"];
     let clicks = 0;
     let gameRunning = false;
+    let duration = 5;
     let startTime;
+    let resetPending = false;
     let multiplayer = false;
+    let progressInterval;
+
+    // Multiplayer vars
+    let p1Score = 0;
+    let p2Score = 0;
     let playerTurn = 1;
-    let p1Score = 0, p2Score = 0;
+    let multiplayerState = "waiting"; // waiting, ready, started
+    let spacePressed = false;
+    let keyPressedAfterSpace = false;
 
     function showTab(id) {
       document.querySelectorAll(".tab").forEach(tab => tab.classList.remove("active-tab"));
       document.getElementById(id).classList.add("active-tab");
       if (id === "leaderboard") loadLeaderboard();
+    }
+
+    function toggleFilters() {
+      const box = document.getElementById("filterBox");
+      box.style.display = box.style.display === "none" ? "block" : "none";
     }
 
     function applyPreset() {
@@ -196,137 +225,138 @@
     }
 
     function startGame() {
+      duration = parseInt(document.getElementById("testDuration").value) || 5;
       clicks = 0;
       gameRunning = true;
-      startTime = Date.now();
+      resetPending = false;
       document.getElementById("scoreDisplay").innerText = "Go!";
+      document.getElementById("progressBarContainer").style.display = "block";
+      document.getElementById("progressBar").style.width = "0%";
+
+      startTime = Date.now();
+
+      progressInterval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const percent = Math.min((elapsed / duration) * 100, 100);
+        document.getElementById("progressBar").style.width = percent + "%";
+      }, 50);
+
       setTimeout(() => {
         gameRunning = false;
-        const cps = (clicks / 5).toFixed(2);
-        document.getElementById("scoreDisplay").innerText = `Score: ${clicks} | CPS: ${cps}`;
-        saveScore(clicks, cps, activeKeys.join(","));
+        clearInterval(progressInterval);
+        document.getElementById("progressBarContainer").style.display = "none";
+        const cps = (clicks / duration).toFixed(2);
+        document.getElementById("scoreDisplay").innerText = `Score: ${clicks} | CPS: ${cps} (Press space to restart)`;
+        saveScore(clicks, cps, activeKeys.join(","), duration);
         loadLeaderboard();
-      }, 5000);
+        resetPending = true;
+      }, duration * 1000);
     }
 
-    function startMultiplayer() {
-      multiplayer = true;
-      playerTurn = 1;
-      p1Score = 0;
-      p2Score = 0;
-      document.getElementById("multiMessage").innerText = "Player 1 starts! Press any key...";
-      gameRunning = false;
-    }
-
-    function handleKey(e) {
-      if (!gameRunning) {
-        if (multiplayer) {
-          if (playerTurn === 1 || playerTurn === 2) {
-            startMultiplayerTurn(playerTurn);
-          }
-        }
-        return;
-      }
-
-      if (activeKeys.includes(e.key.toLowerCase())) {
-        clicks++;
-        updateScoreDisplay();
-
-        // Flash effect
-        document.getElementById("flash").style.opacity = 0.3;
-        setTimeout(() => {
-          document.getElementById("flash").style.opacity = 0;
-        }, 100);
-      }
-    }
-
-    function updateScoreDisplay() {
-      if (!multiplayer) {
-        document.getElementById("scoreDisplay").innerText = `Clicks: ${clicks}`;
-      } else {
-        document.getElementById("multiMessage").innerText = `Player ${playerTurn}: ${clicks}`;
-      }
-    }
-
-    function startMultiplayerTurn(player) {
-      clicks = 0;
-      gameRunning = true;
-      document.getElementById("multiMessage").innerText = `Player ${player}: Go!`;
-
-      setTimeout(() => {
-        gameRunning = false;
-
-        if (player === 1) {
-          p1Score = clicks;
-          playerTurn = 2;
-
-          let countdown = 30;
-          let skipping = false;
-          const msg = document.getElementById("multiMessage");
-          msg.innerText = `⏳ Waiting ${countdown}s for Player 2... (Hold 'S' to skip)`;
-
-          const interval = setInterval(() => {
-            countdown--;
-            msg.innerText = `⏳ Waiting ${countdown}s for Player 2... (Hold 'S' to skip)`;
-            if (countdown <= 0 || skipping) {
-              clearInterval(interval);
-              msg.innerText = "➡️ Player 2's Turn! Press any key...";
-              document.removeEventListener("keydown", skipHandler);
-            }
-          }, 1000);
-
-          const skipHandler = (e) => {
-            if (e.key.toLowerCase() === "s") {
-              skipping = true;
-              clearInterval(interval);
-              msg.innerText = "➡️ Player 2's Turn! Press any key...";
-              document.removeEventListener("keydown", skipHandler);
-            }
-          };
-
-          document.addEventListener("keydown", skipHandler);
-        } else {
-          p2Score = clicks;
-          playerTurn = 1;
-
-          saveScore(p1Score, (p1Score / 5).toFixed(2), activeKeys.join(","));
-          saveScore(p2Score, (p2Score / 5).toFixed(2), activeKeys.join(","));
-
-          if (p1Score > p2Score) {
-            document.getElementById("multiMessage").innerText = `🎉 Player 1 wins! ${p1Score} vs ${p2Score}`;
-          } else if (p2Score > p1Score) {
-            document.getElementById("multiMessage").innerText = `🎉 Player 2 wins! ${p2Score} vs ${p1Score}`;
-          } else {
-            document.getElementById("multiMessage").innerText = `🤝 It's a tie! ${p1Score} - ${p2Score}`;
-          }
-
-          loadLeaderboard();
-        }
-      }, 5000);
-    }
-
-    function saveScore(score, cps, keys) {
+    function saveScore(score, cps, keys, timeSec) {
       const scores = JSON.parse(localStorage.getItem("cpsScores") || "[]");
-      scores.push({ score, cps, keys, time: new Date().toLocaleTimeString() });
+      scores.push({
+        score,
+        cps,
+        keys,
+        timeSec,
+        time: new Date().toLocaleString()
+      });
       localStorage.setItem("cpsScores", JSON.stringify(scores));
     }
 
     function loadLeaderboard() {
       const scores = JSON.parse(localStorage.getItem("cpsScores") || "[]");
-      const container = document.getElementById("leaderboard");
-      container.innerHTML = "<h2>Leaderboard</h2>";
-      scores.sort((a, b) => b.score - a.score);
-      scores.slice(0, 10).forEach(entry => {
-        container.innerHTML += `
+      const filterTime = document.getElementById("filterTime").value;
+      const filterKeys = document.getElementById("filterKeys").value.toLowerCase().trim();
+
+      const filtered = scores.filter(entry => {
+        const matchesTime = !filterTime || entry.timeSec == filterTime;
+        const matchesKeys = !filterKeys || entry.keys.includes(filterKeys);
+        return matchesTime && matchesKeys;
+      });
+
+      const list = document.getElementById("leaderboardList");
+      list.innerHTML = "<h2>Leaderboard</h2>";
+      filtered.sort((a, b) => b.score - a.score);
+      filtered.slice(0, 10).forEach(entry => {
+        list.innerHTML += `
           <div class="leaderboard-entry">
             <strong>${entry.score}</strong> clicks | ${entry.cps} CPS<br>
-            Keys: ${entry.keys} | ${entry.time}
+            Keys: ${entry.keys} | Test: ${entry.timeSec}s | ${entry.time}
           </div>`;
       });
     }
 
-    document.addEventListener("keydown", handleKey);
+    function handleKeyDown(e) {
+      if (document.getElementById("game").classList.contains("active-tab")) {
+        if (!gameRunning && !resetPending) {
+          startGame();
+        } else if (!gameRunning && resetPending && e.code === "Space") {
+          resetPending = false;
+          document.getElementById("scoreDisplay").innerText = "Press any key to start";
+        } else if (gameRunning && activeKeys.includes(e.key.toLowerCase())) {
+          clicks++;
+          document.getElementById("scoreDisplay").innerText = `Clicks: ${clicks}`;
+        }
+      }
+
+      if (document.getElementById("multiplayer").classList.contains("active-tab")) {
+        if (!gameRunning) {
+          if (!spacePressed && e.code === "Space") {
+            spacePressed = true;
+            document.getElementById("multiMessage").innerText = "Now press a valid key to begin!";
+          } else if (spacePressed && activeKeys.includes(e.key.toLowerCase())) {
+            startMultiplayerRound();
+          }
+        } else if (gameRunning && activeKeys.includes(e.key.toLowerCase())) {
+          clicks++;
+          document.getElementById("multiMessage").innerText = `Player ${playerTurn}: Clicks ${clicks}`;
+        }
+      }
+    }
+
+    function startMultiplayerRound() {
+      spacePressed = false;
+      clicks = 0;
+      gameRunning = true;
+
+      duration = parseInt(document.getElementById("testDuration").value) || 5;
+      document.getElementById("progressBarContainerMultiplayer").style.display = "block";
+      document.getElementById("progressBarMultiplayer").style.width = "0%";
+      document.getElementById("multiMessage").innerText = `Player ${playerTurn}: Go!`;
+
+      startTime = Date.now();
+
+      progressInterval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const percent = Math.min((elapsed / duration) * 100, 100);
+        document.getElementById("progressBarMultiplayer").style.width = percent + "%";
+      }, 50);
+
+      setTimeout(() => {
+        gameRunning = false;
+        clearInterval(progressInterval);
+        document.getElementById("progressBarContainerMultiplayer").style.display = "none";
+
+        if (playerTurn === 1) {
+          p1Score = clicks;
+          playerTurn = 2;
+          document.getElementById("multiMessage").innerText = "Player 2: Press space to begin";
+        } else {
+          p2Score = clicks;
+          const result = p1Score > p2Score
+            ? `🎉 Player 1 wins! ${p1Score} vs ${p2Score}`
+            : p2Score > p1Score
+              ? `🎉 Player 2 wins! ${p2Score} vs ${p1Score}`
+              : `🤝 It's a tie! ${p1Score} - ${p2Score}`;
+          document.getElementById("multiMessage").innerText = `${result}\n(Press space to play again)`;
+          playerTurn = 1;
+        }
+      }, duration * 1000);
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
   </script>
 </body>
 </html>
-
